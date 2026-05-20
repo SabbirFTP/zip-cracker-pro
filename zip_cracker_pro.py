@@ -9,13 +9,22 @@ from multiprocessing import Pool, cpu_count
 SAVE_FILE = "progress.txt"
 PROGRESS_INTERVAL = 500
 
+
 # ---------------- CORE ----------------
-def try_password_fast(zip_file, password):
+def try_password_fast(zip_path, password):
     try:
-        zip_file.extractall(pwd=password.encode())
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(pwd=password.encode())
         return True
     except:
         return False
+
+
+def worker(args):
+    zip_path, password = args
+    if try_password_fast(zip_path, password):
+        return password
+    return None
 
 
 def save_progress(password):
@@ -32,7 +41,7 @@ def load_progress():
 
 # ---------------- ATTACKS ----------------
 
-def numeric_attack(zip_file, min_len, max_len):
+def numeric_attack(zip_path, min_len, max_len):
     print("\n🔢 Numeric Attack (Smart Ordered)\n")
 
     attempts = 0
@@ -52,14 +61,12 @@ def numeric_attack(zip_file, min_len, max_len):
                 percent = (num / total) * 100
 
                 print(
-                    f"Trying: {password} | "
-                    f"{percent:.2f}% | "
-                    f"{speed:.0f} pwd/sec | "
-                    f"Attempts: {attempts}",
+                    f"Trying: {password} | {percent:.2f}% | "
+                    f"{speed:.0f} pwd/sec | Attempts: {attempts}",
                     end="\r"
                 )
 
-            if try_password_fast(zip_file, password):
+            if try_password_fast(zip_path, password):
                 print(f"\n\n✅ FOUND (numeric): {password}")
                 print(f"Attempts: {attempts}")
                 print(f"Time: {round(time.time() - start, 2)} sec")
@@ -68,7 +75,7 @@ def numeric_attack(zip_file, min_len, max_len):
     return None
 
 
-def dictionary_attack(zip_file, wordlist):
+def dictionary_attack(zip_path, wordlist):
     print("\n📚 Dictionary Attack\n")
 
     attempts = 0
@@ -87,14 +94,14 @@ def dictionary_attack(zip_file, wordlist):
                     end="\r"
                 )
 
-            if try_password_fast(zip_file, password):
+            if try_password_fast(zip_path, password):
                 print(f"\n\n✅ FOUND (dictionary): {password}")
                 return password
 
     return None
 
 
-def hybrid_attack(zip_file, wordlist):
+def hybrid_attack(zip_path, wordlist):
     print("\n🔀 Hybrid Attack (word + numbers)\n")
 
     attempts = 0
@@ -116,27 +123,22 @@ def hybrid_attack(zip_file, wordlist):
                     end="\r"
                 )
 
-            if try_password_fast(zip_file, password):
+            if try_password_fast(zip_path, password):
                 print(f"\n\n✅ FOUND (hybrid): {password}")
                 return password
 
     return None
 
 
-def pattern_attack(zip_file):
+def pattern_attack(zip_path):
     print("\n📅 Pattern Attack (dates like 0616)\n")
-
-    attempts = 0
-    start = time.time()
 
     for day in range(1, 32):
         for month in range(1, 13):
             password = f"{day:02d}{month:02d}"
-            attempts += 1
-
             print(f"Trying: {password}", end="\r")
 
-            if try_password_fast(zip_file, password):
+            if try_password_fast(zip_path, password):
                 print(f"\n\n✅ FOUND (pattern): {password}")
                 return password
 
@@ -146,13 +148,8 @@ def pattern_attack(zip_file):
 def brute_force_parallel(zip_path, charset, min_len, max_len):
     print("\n⚡ Parallel Brute Force\n")
 
-    def worker(password):
-        try:
-            with zipfile.ZipFile(zip_path) as zf:
-                zf.extractall(pwd=password.encode())
-            return password
-        except:
-            return None
+    attempts = 0
+    start = time.time()
 
     pool = Pool(cpu_count())
 
@@ -163,7 +160,8 @@ def brute_force_parallel(zip_path, charset, min_len, max_len):
 
         batch = []
         for pwd in combos:
-            batch.append(pwd)
+            batch.append((zip_path, pwd))
+            attempts += 1
 
             if len(batch) >= 500:
                 results = pool.map(worker, batch)
@@ -171,9 +169,30 @@ def brute_force_parallel(zip_path, charset, min_len, max_len):
                 for res in results:
                     if res:
                         pool.terminate()
+                        pool.join()
+                        print(f"\n\n✅ FOUND (brute): {res}")
                         return res
 
                 batch = []
+
+                # progress update
+                if attempts % PROGRESS_INTERVAL == 0:
+                    elapsed = time.time() - start
+                    speed = attempts / elapsed if elapsed else 0
+                    print(
+                        f"Attempts: {attempts} | {speed:.0f} pwd/sec",
+                        end="\r"
+                    )
+
+        # process remaining
+        if batch:
+            results = pool.map(worker, batch)
+            for res in results:
+                if res:
+                    pool.terminate()
+                    pool.join()
+                    print(f"\n\n✅ FOUND (brute): {res}")
+                    return res
 
     pool.close()
     pool.join()
@@ -188,8 +207,6 @@ def main():
     if not os.path.exists(zip_path):
         print("❌ File not found")
         return
-
-    zip_file = zipfile.ZipFile(zip_path)
 
     print("\nSelect attack mode:")
     print("1. Smart Numeric")
@@ -206,18 +223,18 @@ def main():
     if choice == "1":
         min_len = int(input("Min length: "))
         max_len = int(input("Max length: "))
-        found = numeric_attack(zip_file, min_len, max_len)
+        found = numeric_attack(zip_path, min_len, max_len)
 
     elif choice == "2":
         wl = input("Wordlist path: ")
-        found = dictionary_attack(zip_file, wl)
+        found = dictionary_attack(zip_path, wl)
 
     elif choice == "3":
         wl = input("Wordlist path: ")
-        found = hybrid_attack(zip_file, wl)
+        found = hybrid_attack(zip_path, wl)
 
     elif choice == "4":
-        found = pattern_attack(zip_file)
+        found = pattern_attack(zip_path)
 
     elif choice == "5":
         charset = string.ascii_letters + string.digits
