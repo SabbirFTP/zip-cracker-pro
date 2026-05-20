@@ -1,4 +1,5 @@
 import zipfile
+import pyzipper
 import string
 import itertools
 import time
@@ -8,13 +9,37 @@ from multiprocessing import Pool, cpu_count
 # ---------------- CONFIG ----------------
 SAVE_FILE = "progress.txt"
 PROGRESS_INTERVAL = 500
-
+BATCH_SIZE = 500
 
 # ---------------- CORE ----------------
-def try_password_fast(zip_path, password):
+
+def is_aes_zip(zip_path):
+    try:
+        with pyzipper.AESZipFile(zip_path) as zf:
+            return any(zinfo.flag_bits & 0x1 for zinfo in zf.infolist())
+    except:
+        return False
+
+
+def try_password(zip_path, password):
+    password_bytes = password.encode()
+
+    # Try AES first
+    try:
+        with pyzipper.AESZipFile(zip_path) as zf:
+            name = zf.namelist()[0]
+            with zf.open(name, pwd=password_bytes) as f:
+                f.read(1)
+        return True
+    except:
+        pass
+
+    # Fallback to standard ZIP
     try:
         with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(pwd=password.encode())
+            name = zf.namelist()[0]
+            with zf.open(name, pwd=password_bytes) as f:
+                f.read(1)
         return True
     except:
         return False
@@ -22,7 +47,7 @@ def try_password_fast(zip_path, password):
 
 def worker(args):
     zip_path, password = args
-    if try_password_fast(zip_path, password):
+    if try_password(zip_path, password):
         return password
     return None
 
@@ -63,13 +88,12 @@ def numeric_attack(zip_path, min_len, max_len):
                 print(
                     f"Trying: {password} | {percent:.2f}% | "
                     f"{speed:.0f} pwd/sec | Attempts: {attempts}",
-                    end="\r"
+                    end="\r",
+                    flush=True
                 )
 
-            if try_password_fast(zip_path, password):
+            if try_password(zip_path, password):
                 print(f"\n\n✅ FOUND (numeric): {password}")
-                print(f"Attempts: {attempts}")
-                print(f"Time: {round(time.time() - start, 2)} sec")
                 return password
 
     return None
@@ -89,12 +113,14 @@ def dictionary_attack(zip_path, wordlist):
             if attempts % PROGRESS_INTERVAL == 0:
                 elapsed = time.time() - start
                 speed = attempts / elapsed if elapsed else 0
+
                 print(
                     f"Trying: {password} | {speed:.0f} pwd/sec | Attempts: {attempts}",
-                    end="\r"
+                    end="\r",
+                    flush=True
                 )
 
-            if try_password_fast(zip_path, password):
+            if try_password(zip_path, password):
                 print(f"\n\n✅ FOUND (dictionary): {password}")
                 return password
 
@@ -102,7 +128,7 @@ def dictionary_attack(zip_path, wordlist):
 
 
 def hybrid_attack(zip_path, wordlist):
-    print("\n🔀 Hybrid Attack (word + numbers)\n")
+    print("\n🔀 Hybrid Attack\n")
 
     attempts = 0
     start = time.time()
@@ -118,12 +144,14 @@ def hybrid_attack(zip_path, wordlist):
             if attempts % PROGRESS_INTERVAL == 0:
                 elapsed = time.time() - start
                 speed = attempts / elapsed if elapsed else 0
+
                 print(
                     f"Trying: {password} | {speed:.0f} pwd/sec | Attempts: {attempts}",
-                    end="\r"
+                    end="\r",
+                    flush=True
                 )
 
-            if try_password_fast(zip_path, password):
+            if try_password(zip_path, password):
                 print(f"\n\n✅ FOUND (hybrid): {password}")
                 return password
 
@@ -131,18 +159,20 @@ def hybrid_attack(zip_path, wordlist):
 
 
 def pattern_attack(zip_path):
-    print("\n📅 Pattern Attack (dates like 0616)\n")
+    print("\n📅 Pattern Attack\n")
 
     for day in range(1, 32):
         for month in range(1, 13):
             password = f"{day:02d}{month:02d}"
-            print(f"Trying: {password}", end="\r")
 
-            if try_password_fast(zip_path, password):
+            print(f"Trying: {password}", end="\r", flush=True)
+
+            if try_password(zip_path, password):
                 print(f"\n\n✅ FOUND (pattern): {password}")
                 return password
 
     return None
+
 
 def brute_force_parallel(zip_path, charset, min_len, max_len):
     print("\n⚡ Parallel Brute Force\n")
@@ -155,40 +185,29 @@ def brute_force_parallel(zip_path, charset, min_len, max_len):
     for length in range(min_len, max_len + 1):
         print(f"\n👉 Length {length}")
 
-        combos = ("".join(p) for p in itertools.product(charset, repeat=length))
+        generator = ("".join(p) for p in itertools.product(charset, repeat=length))
 
-        batch = []
-        for pwd in combos:
-            batch.append((zip_path, pwd))
-            attempts += 1
+        while True:
+            batch = list(itertools.islice(generator, BATCH_SIZE))
+            if not batch:
+                break
 
-            # 🔥 LIVE progress (not waiting for batch)
-            if attempts % 200 == 0:
-                elapsed = time.time() - start
-                speed = attempts / elapsed if elapsed else 0
+            tasks = [(zip_path, pwd) for pwd in batch]
+            results = pool.map(worker, tasks)
 
-                print(
-                    f"[Len {length}] Attempts: {attempts} | {speed:.0f} pwd/sec",
-                    end="\r",
-                    flush=True
-                )
+            for pwd, res in zip(batch, results):
+                attempts += 1
 
-            if len(batch) >= 500:
-                results = pool.map(worker, batch)
+                if attempts % PROGRESS_INTERVAL == 0:
+                    elapsed = time.time() - start
+                    speed = attempts / elapsed if elapsed else 0
 
-                for res in results:
-                    if res:
-                        pool.terminate()
-                        pool.join()
-                        print(f"\n\n✅ FOUND (brute): {res}")
-                        return res
+                    print(
+                        f"[Len {length}] {pwd} | {speed:.0f} pwd/sec | Attempts: {attempts}",
+                        end="\r",
+                        flush=True
+                    )
 
-                batch = []
-
-        # process remaining
-        if batch:
-            results = pool.map(worker, batch)
-            for res in results:
                 if res:
                     pool.terminate()
                     pool.join()
@@ -203,6 +222,8 @@ def brute_force_parallel(zip_path, charset, min_len, max_len):
 # ---------------- MAIN ----------------
 
 def main():
+    print("\n[ ZC ] Initializing Zip Cracker Pro...\n")
+
     zip_path = input("ZIP file path: ").strip()
 
     if not os.path.exists(zip_path):
@@ -212,8 +233,8 @@ def main():
     print("\nSelect attack mode:")
     print("1. Smart Numeric")
     print("2. Dictionary")
-    print("3. Hybrid (word + numbers)")
-    print("4. Pattern (dates)")
+    print("3. Hybrid")
+    print("4. Pattern")
     print("5. Full brute force (parallel)")
 
     choice = input("Choice: ").strip()
@@ -239,7 +260,7 @@ def main():
 
     elif choice == "5":
         charset = string.ascii_letters + string.digits
-        found = brute_force_parallel(zip_path, charset, 1, 5)
+        found = brute_force_parallel(zip_path, charset, 1, 6)
 
     if found:
         print(f"\n✅ PASSWORD FOUND: {found}")
