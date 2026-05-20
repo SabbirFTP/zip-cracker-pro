@@ -1,8 +1,7 @@
-
 # 🔓 ZIP Cracker Pro (Python)
 
 A multi-strategy ZIP password recovery tool built in Python.  
-Designed for **real-world recovery scenarios** using smart attack patterns instead of blind brute force.
+Supports **both Standard ZIP and AES-encrypted ZIP (WinRAR / 7zip / Ubuntu)**.
 
 ---
 
@@ -16,89 +15,94 @@ This tool attempts to recover passwords from protected `.zip` files using multip
 - Pattern-based attacks (dates, common formats)
 - Parallel brute-force (multi-core CPU)
 
-It is **not meant to compete with GPU tools like hashcat**, but is highly effective for:
-- Short passwords
-- Human-pattern passwords
-- Known formats (dates, PINs, common words)
+✅ Works with:
+- Standard ZIP (ZipCrypto)
+- AES-encrypted ZIP (Ubuntu / WinRAR / 7zip)
 
 ---
 
 ## ⚙️ Features
 
-### 🔢 Smart Numeric Attack
-- Tries numbers in order: `0001 → 9999`
-- Preserves leading zeros (`0616`)
-- Extremely fast for PIN-style passwords
-
----
-
-### 📚 Dictionary Attack
-- Uses a wordlist file (e.g. `rockyou.txt`)
-- Best for common passwords
-
----
-
-### 🔀 Hybrid Attack
-- Combines wordlist + numbers
-- Examples:
-  - `admin123`
-  - `test2024`
-
----
-
-### 📅 Pattern Attack
-- Targets date-based passwords
-- Examples:
-  - `0616`
-  - `2501`
-  - `3112`
-
----
-
-### ⚡ Parallel Brute Force
-- Uses all CPU cores
-- Tries full charset combinations
-- Slow but exhaustive
+- ✔ Accurate password validation (no false positives)
+- ✔ AES ZIP support (via `pyzipper`)
+- ✔ Smart attack ordering (fast real-world cracking)
+- ✔ Multi-core brute-force
+- ✔ Live progress tracking
+- ✔ Safe memory usage (stream-based validation)
 
 ---
 
 ## 📦 Requirements
 
-- Python 3.x
-- Linux / macOS / Windows (tested on Ubuntu)
+- Python 3.10+
+- pip (or pipx)
+- OS: Linux / macOS / Windows
 
 ---
 
-## 📂 Installation
+## 📂 Installation (IMPORTANT ⚠️)
+
+### 🔥 Ubuntu / Debian (Recommended Method)
+
+Due to **PEP 668**, you MUST use a virtual environment.
+
+### Step 1: Install venv
+```bash
+sudo apt install python3-venv -y
+````
+
+### Step 2: Clone project
 
 ```bash
 git clone https://github.com/SabbirFTP/zip-cracker-pro.git
 cd zip-cracker-pro
-python3 zip_cracker_pro.py
-````
+```
 
-Or simply run the script directly if downloaded.
+### Step 3: Create virtual environment
+
+```bash
+python3 -m venv venv
+```
+
+### Step 4: Activate environment
+
+```bash
+source venv/bin/activate
+```
+
+👉 You should now see:
+
+```
+(venv) user@machine:
+```
+
+### Step 5: Install dependencies
+
+```bash
+pip install pyzipper
+```
+
+---
+
+### ⚡ Alternative (Quick but NOT recommended)
+
+```bash
+pip install pyzipper --break-system-packages
+```
 
 ---
 
 ## ▶️ Usage
 
 ```bash
-python3 zip_cracker_pro.py
-```
-
-You will be prompted:
-
-```text
-ZIP file path:
-Select attack mode:
+python zip_cracker_pro.py
 ```
 
 ---
 
 ## 🧠 Attack Modes Explained
 
-### 1. Smart Numeric (Recommended First)
+### 1. 🔢 Smart Numeric (Recommended First)
 
 Best for:
 
@@ -106,32 +110,30 @@ Best for:
 * Dates
 * Short numeric passwords
 
-Example input:
+Example:
 
-```text
+```
 Min length: 1
 Max length: 4
 ```
 
-👉 If password = `0616`, it will be found around attempt ~616
-
 ---
 
-### 2. Dictionary Attack
+### 2. 📚 Dictionary Attack
 
 Requires:
 
-```text
+```
 Wordlist path: /path/to/wordlist.txt
 ```
 
-Recommended wordlists:
+Recommended:
 
-* `rockyou.txt`
+* rockyou.txt
 
 ---
 
-### 3. Hybrid Attack
+### 3. 🔀 Hybrid Attack
 
 Combines:
 
@@ -141,58 +143,46 @@ Combines:
 
 Examples:
 
-* `sabbir123`
-* `admin2024`
+* admin123
+* sabbir2026
 
 ---
 
-### 4. Pattern Attack
+### 4. 📅 Pattern Attack
 
-Predefined patterns:
+Targets:
 
-* DDMM (day-month)
+* Date-based passwords
 
 Examples:
 
-* `0616`
-* `2501`
-
-👉 Fastest for human-created passwords
+* 0616
+* 2501
+* 3112
 
 ---
 
-### 5. Parallel Brute Force
+### 5. ⚡ Parallel Brute Force
 
-* Uses:
-
-  * letters + numbers
-* Multi-core processing
-* Very slow for large ranges
-
-Use only if all other methods fail.
+* Uses all CPU cores
+* Full charset (a-z, A-Z, 0-9)
+* Slow but exhaustive
 
 ---
 
 ## 📊 Output & Progress
 
-During execution, you will see:
+Example:
 
-```text
+```
 Trying: 0616 | 6.16% | 1200 pwd/sec | Attempts: 616
 ```
 
-Meaning:
-
-* Current password attempt
-* Progress %
-* Speed (passwords/sec)
-* Total attempts
-
 ---
 
-## ⚡ Performance Tips
+## ⚡ Performance Strategy (IMPORTANT)
 
-### ✅ Always follow this order:
+Always follow:
 
 1. Smart Numeric
 2. Pattern Attack
@@ -202,11 +192,35 @@ Meaning:
 
 ---
 
-### 🚀 Speed Optimization
+## 🔍 How It Works (Technical)
 
-* Keep password length range small
-* Use targeted charset when possible
-* Avoid full brute force unless necessary
+Instead of extracting full files, the tool:
+
+```python
+zf.open(file, pwd=password).read(1)
+```
+
+✔ Forces real decryption
+✔ Prevents false positives
+✔ Works for AES + standard ZIP
+
+---
+
+## 🔐 AES ZIP Support
+
+Modern tools (Ubuntu Archive Manager, WinRAR, 7zip) use **AES encryption**.
+
+Standard Python `zipfile`:
+❌ Cannot handle AES properly
+
+This tool uses:
+
+```
+pyzipper
+```
+
+✔ Enables AES decryption
+✔ Ensures correct password validation
 
 ---
 
@@ -214,46 +228,57 @@ Meaning:
 
 * Python is slower than:
 
-  * `hashcat` (GPU)
-  * `fcrackzip` (C-based)
+  * hashcat (GPU)
+  * fcrackzip (C-based)
 
-* AES-encrypted ZIPs are significantly slower to crack
+* AES ZIP cracking is significantly slower
+
+---
+
+## 🧪 Tested On
+
+* Ubuntu (Archive Manager ZIP)
+* WinRAR encrypted ZIP
+* 7zip AES ZIP
 
 ---
 
 ## 🔐 Security Note
 
-* Do NOT upload sensitive ZIP files to online tools
-* This script runs locally → safer for private data
+* Runs locally (safe for sensitive data)
+* No external API calls
+* No file uploads
 
 ---
 
 ## ⚠️ Disclaimer
 
-This tool is intended for:
+Use only for:
 
-* Recovering your own forgotten passwords
-* Educational purposes
+* Your own files
+* Authorized recovery
 
-Do not use it on files without proper authorization.
+Do NOT use for unauthorized access.
 
 ---
 
 ## 🚀 Future Improvements
 
-* GPU acceleration (hashcat integration)
-* Smart pattern learning (AI-based guessing)
-* Resume from last checkpoint
-* Custom mask attack support
+* CLI flags (non-interactive mode)
+* Resume per attack mode
+* GPU acceleration (hashcat bridge)
+* Smart password ranking
+* Distributed cracking
 
 ---
 
 ## 👨‍💻 Author
 
-Built for practical use by developers who:
+Built for developers who:
 
 * forget passwords 😄
-* prefer control over black-box tools
+* want control over cracking process
+* prefer transparent tools over black-box software
 
 ---
 
@@ -261,8 +286,8 @@ Built for practical use by developers who:
 
 If your password is:
 
-* Short (≤6 chars) → this tool is effective
-* Pattern-based → very fast recovery
-* Strong/random → use **hashcat**
+* ≤6 characters → HIGH success rate
+* Pattern-based → VERY fast recovery
+* Strong/random → use hashcat
 
-```
+---
