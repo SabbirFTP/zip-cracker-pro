@@ -72,7 +72,7 @@ It is **not meant to compete with GPU tools like hashcat**, but is highly effect
 ## 📂 Installation
 
 ```bash
-git clone <your-repo>
+git clone https://github.com/SabbirFTP/zip-cracker-pro.git
 cd zip-cracker-pro
 python3 zip_cracker_pro.py
 ````
