@@ -144,7 +144,6 @@ def pattern_attack(zip_path):
 
     return None
 
-
 def brute_force_parallel(zip_path, charset, min_len, max_len):
     print("\n⚡ Parallel Brute Force\n")
 
@@ -163,6 +162,17 @@ def brute_force_parallel(zip_path, charset, min_len, max_len):
             batch.append((zip_path, pwd))
             attempts += 1
 
+            # 🔥 LIVE progress (not waiting for batch)
+            if attempts % 200 == 0:
+                elapsed = time.time() - start
+                speed = attempts / elapsed if elapsed else 0
+
+                print(
+                    f"[Len {length}] Attempts: {attempts} | {speed:.0f} pwd/sec",
+                    end="\r",
+                    flush=True
+                )
+
             if len(batch) >= 500:
                 results = pool.map(worker, batch)
 
@@ -174,15 +184,6 @@ def brute_force_parallel(zip_path, charset, min_len, max_len):
                         return res
 
                 batch = []
-
-                # progress update
-                if attempts % PROGRESS_INTERVAL == 0:
-                    elapsed = time.time() - start
-                    speed = attempts / elapsed if elapsed else 0
-                    print(
-                        f"Attempts: {attempts} | {speed:.0f} pwd/sec",
-                        end="\r"
-                    )
 
         # process remaining
         if batch:
